@@ -300,7 +300,7 @@ if ($install.IsPresent)
 if ($Join.IsPresent)
 {
     $kubeConfig = GetKubeConfig
-    if (!(KusbeConfigExists))
+    if (!(KubeConfigExists))
     {
         if(![System.String]::IsNullOrWhiteSpace($KubeConfigFile) -and (Test-Path $KubeConfigFile))
         {
