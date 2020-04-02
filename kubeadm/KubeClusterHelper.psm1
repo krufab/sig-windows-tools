@@ -10,6 +10,11 @@ $Global:PauseImage = "mcr.microsoft.com/k8s/core/pause:1.2.0"
 $Global:NanoserverImage = "mcr.microsoft.com/windows/nanoserver:1809"
 $Global:ServercoreImage = "mcr.microsoft.com/windows/servercore:ltsc2019"
 $Global:Cri = "dockerd"
+$Global:CniBinariesRelease = '0.8.5'
+$Global:CniVersion = '0.3.0'
+$Global:FlannelBinariesRelease = '0.12.0'
+$Global:DockerVersion = '18.09'
+$Global:KubernetesRelease= '1.15'
 
 function GetKubeConfig()
 {
@@ -19,6 +24,13 @@ function GetKubeConfig()
 function KubeConfigExists()
 {
     return Test-Path $(GetKubeConfig)
+}
+
+function CopyKubeConfig($KubeConfigFile)
+{
+    $kc = GetKubeConfig
+    Write-Host "Copying Kubeconfig from $KubeConfigFile to $kc"
+    cp $KubeConfigFile $kc
 }
 
 function DownloadKubeConfig($Master, $User=$Global:MasterUsername)
@@ -287,13 +299,14 @@ function WaitForServiceRunningState($ServiceName, $TimeoutSeconds)
 
 function DownloadCniBinaries($NetworkMode, $CniPath)
 {
-    Write-Host "Downloading CNI binaries for $NetworkMode to $CniPath"
+    $Release = $Global:CniBinariesRelease
+    Write-Host "Downloading CNI binaries v${Release} for $NetworkMode to $CniPath"
     
     CreateDirectory $CniPath
     CreateDirectory $CniPath\config
     DownloadFlannelBinaries -Destination $Global:BaseDir
-    DownloadFile -Url https://github.com/containernetworking/plugins/releases/download/v0.8.2/cni-plugins-windows-amd64-v0.8.2.tgz -Destination $Global:BaseDir/cni-plugins-windows-amd64-v0.8.2.tgz
-    & cmd /c tar -zxvf $Global:BaseDir/cni-plugins-windows-amd64-v0.8.2.tgz -C $CniPath '2>&1'
+    DownloadFile -Url "https://github.com/containernetworking/plugins/releases/download/v${Release}/cni-plugins-windows-amd64-v${Release}.tgz" -Destination "$Global:BaseDir/cni-plugins-windows-amd64-v${Release}.tgz"
+    & cmd /c tar -zxvf "$Global:BaseDir/cni-plugins-windows-amd64-v${Release}.tgz" -C $CniPath '2>&1'
     if (!$?) { Write-Warning "Error decompressing file, exiting."; exit; }
 }
 
@@ -301,11 +314,11 @@ function DownloadFlannelBinaries()
 {
     param(
         [Parameter(Mandatory = $false, Position = 0)]
-        [string] $Release = "0.11.0",
+        [string] $Release = $Global:FlannelBinariesRelease,
         [string] $Destination = "c:\flannel"
     )
 
-    Write-Host "Downloading Flannel binaries"
+    Write-Host "Downloading Flannel binaries v${Release}"
     DownloadFile -Url  "https://github.com/coreos/flannel/releases/download/v${Release}/flanneld.exe" -Destination $Destination\flanneld.exe 
 }
 
@@ -375,7 +388,7 @@ function GetSourceVip($NetworkName)
     $subnet = $hnsNetwork.Subnets[0].AddressPrefix
 
     $ipamConfig = @"
-        {"cniVersion": "0.2.0", "name": "vxlan0", "ipam":{"type":"host-local","ranges":[[{"subnet":"$subnet"}]],"dataDir":"/var/lib/cni/networks"}}
+        {"cniVersion": "${Global:CniVersion}", "name": "vxlan0", "ipam":{"type":"host-local","ranges":[[{"subnet":"$subnet"}]],"dataDir":"/var/lib/cni/networks"}}
 "@
 
     $ipamConfig | Out-File $sourceVipRequest
@@ -522,7 +535,7 @@ Update-CNIConfig
     if ($NetworkMode -eq "l2bridge")
     {
         $jsonSampleConfig = '{
-            "cniVersion": "0.2.0",
+            "cniVersion": "<CniVersion>",
             "name": "<NetworkMode>",
             "type": "flannel",
             "capabilities": {
@@ -545,6 +558,7 @@ Update-CNIConfig
         }'
 
         $configJson =  ConvertFrom-Json $jsonSampleConfig
+        $configJson.cniVersion = $Global:CniVersion
         $configJson.name = $NetworkName
         $configJson.delegate.type = "win-bridge"
           
@@ -558,7 +572,7 @@ Update-CNIConfig
     elseif ($NetworkMode -eq "overlay")
     {
         $jsonSampleConfig = '{
-            "cniVersion": "0.2.0",
+            "cniVersion": "<CniVersion>",
             "name": "<NetworkMode>",
             "type": "flannel",
             "capabilities": {
@@ -578,6 +592,7 @@ Update-CNIConfig
         }'
           
         $configJson =  ConvertFrom-Json $jsonSampleConfig
+        $configJson.cniVersion = $Global:CniVersion
         $configJson.name = $NetworkName
         $configJson.type = "flannel"
         $configJson.delegate.type = "win-overlay"
@@ -1086,7 +1101,7 @@ function InstallDockerD()
     {
         Get-PackageProvider -Name NuGet -ForceBootstrap | Out-Null
         Install-Module -Name DockerMsftProvider -Repository PSGallery -Force
-        Install-Package -Name docker -ProviderName DockerMsftProvider -Force -RequiredVersion 18.09
+        Install-Package -Name docker -ProviderName DockerMsftProvider -Force -RequiredVersion $Global:DockerVersion
         Start-Service Docker -ErrorAction Stop
         $Global:Configuration += @{
             InstallDocker = $true;
@@ -1148,7 +1163,7 @@ function InstallKubernetesBinaries()
     
     $env:KUBECONFIG = $(GetKubeConfig)
 
-    $Release = "1.15"
+    $Release = $Global:KubernetesRelease
     if ($Source.Release)
     {
         $Release = $Source.Release
@@ -1357,6 +1372,7 @@ Export-ModuleMember InstallCRI
 Export-ModuleMember UninstallCNI
 Export-ModuleMember InitHelper
 Export-ModuleMember GetKubeConfig
+Export-ModuleMember CopyKubeConfig
 Export-ModuleMember DownloadKubeConfig
 Export-ModuleMember GetCniPath
 Export-ModuleMember GetCniConfigPath

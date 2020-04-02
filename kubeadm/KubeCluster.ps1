@@ -53,7 +53,9 @@ Param(
     [parameter(Mandatory = $false,HelpMessage="Skip user prompts and auto-accept (i.e. deletion, installing dependencies, etc)")]
     [switch] $force,
     [parameter(Mandatory = $false,HelpMessage="Path to input configuration JSON")] 
-    $ConfigFile
+    $ConfigFile,
+    [parameter(Mandatory = $false,HelpMessage="Path to input Kubernetes configuration YAML")]
+    $KubeConfigFile = $null
 )
 
 function Usage()
@@ -67,6 +69,12 @@ if ($help.IsPresent)
 {
     Usage
     exit
+}
+
+# Allows re-running the script
+if([bool](Get-Variable 'Configuration' -Scope 'Global' -ErrorAction Ignore) -and $Global:Configuration.Contains("Kube"))
+{
+    $Global:Configuration.Remove("Kube")
 }
 
 function ReadKubeclusterConfig($ConfigFile)
@@ -292,10 +300,17 @@ if ($install.IsPresent)
 if ($Join.IsPresent)
 {
     $kubeConfig = GetKubeConfig
-    if (!(KubeConfigExists))
+    if (!(KusbeConfigExists))
     {
-        # Fetch KubeConfig from the master
-        DownloadKubeConfig -Master $Global:MasterIp -User $Global:MasterUsername
+        if(![System.String]::IsNullOrWhiteSpace($KubeConfigFile) -and (Test-Path $KubeConfigFile))
+        {
+            CopyKubeConfig $KubeConfigFile
+        }
+        else
+        {
+            # Fetch KubeConfig from the master
+            DownloadKubeConfig -Master $Global:MasterIp -User $Global:MasterUsername
+        }
         if (!(KubeConfigExists))
         {
             throw $kubeConfig + " does not exist. Cannot connect to the control-plane node"
