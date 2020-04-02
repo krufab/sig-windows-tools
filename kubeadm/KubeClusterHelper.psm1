@@ -411,7 +411,7 @@ function GetSourceVip($NetworkName)
     Remove-Item env:CNI_PATH
     popd
 
-    return $sourceVipJSONData.ip4.ip.Split("/")[0]
+    return $sourceVipJSONData.ips[0].address.Split("/")[0]
 }
 
 function Get-InterfaceIpAddress()
